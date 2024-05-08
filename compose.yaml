@@ -9,11 +9,3 @@ services:
     stop_signal: SIGINT
     ports:
       - '8000:8000'
-    volumes:
-      - app:/app
-volumes:
-  app:
-    driver: local
-    driver_opts:
-      type: 'none'
-      o: 'bind'
