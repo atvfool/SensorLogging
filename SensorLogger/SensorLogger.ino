@@ -1,5 +1,4 @@
 #include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
 
 #include "settings.h"
 
@@ -11,20 +10,19 @@
 // Get settings from settings file
 const char* ssid1 = STASSID1;
 const char* password1 = STAPSK1;
-const char* ssid2 = STASSID2;
-const char* password2 = STAPSK2;
 const char* host = STAHOST;
-const char* sensorid = STASENSORID;
-const char* message = STAMESSAGE;
-const char* token = STATOKEN;
+const String sensorid = STASENSORID;
+const String message = STAMESSAGE;
+const String token = STATOKEN;
 const uint16_t port = STAPORT;
+const String HTTP_METHOD = "POST";
+const String PATH_NAME = "/savelog";
 // Set other consts
 const int TIME_TO_WAIT_AFTER_TRIGGER = 30000;
 const int LOOP_DELAY = 500;
 const int SENSE_PIN = D2;
 
 // Set globals
-ESP8266WiFiMulti WiFiMulti;
 WiFiClient client;
 int prevState = 0;
 
@@ -34,35 +32,22 @@ void setup()
   Serial.println();
   String thisBoard= ARDUINO_BOARD;
   Serial.println(thisBoard);
-  
   pinMode(LED_BUILTIN, OUTPUT);
-  // Set sensor pin to input and get initial value
   pinMode(SENSE_PIN, INPUT);
   prevState = digitalRead(SENSE_PIN);
-
-   // We start by connecting to a WiFi network
-  WiFi.mode(WIFI_STA);
+  blinkTimes(3, 250);
+  delay(2000);
+  blinkTimes(5, 500);
+  delay(2000);
+  blinkTimes(10, 750);
+  delay(2000);
+  
+  WiFi.mode(WIFI_STA); // Sets wifi to station mode
+  WiFi.enableInsecureWEP();
   WiFi.begin(ssid1, password1);
-  // WiFiMulti.addAP(ssid1, password1);
-  // WiFiMulti.addAP(ssid2, password2);
-  
-  Serial.println(ssid1);
-  Serial.println(password1);
-  Serial.println(ssid2);
-  Serial.println(password2);
-  Serial.print("Wait for WiFi... ");
-  
-  // while (WiFiMulti.run() != WL_CONNECTED) {
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print("WiFi.status(): ");
-    Serial.println(WiFi.status());
-    delay(1500);
-  }
+    
+  WiFiConnect();
 
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
   Serial.println("Other settings:");
   Serial.println(String(host));
   Serial.println(String(port));
@@ -75,28 +60,71 @@ void setup()
 
 void loop()
 {
-  // delay(LOOP_DELAY);
-  // Check sensor
-  // Serial.println("digitalRead(SENSE_PIN)");
-  // Serial.println(digitalRead(SENSE_PIN));
-  if (digitalRead(SENSE_PIN) == 1) {
-    digitalWrite(LED_BUILTIN, HIGH);  
-  } else {
-    digitalWrite(LED_BUILTIN, LOW);
-  }
-  if (prevState != digitalRead(2)) {
-    Serial.println("Change Detected, fire all the stuff here, pausing for a while, not sure the amount of time yet");
-    if (!client.connect(host, 54322)) {
+  int currentState = digitalRead(SENSE_PIN);
+  digitalWrite(LED_BUILTIN, currentState == 1 ? HIGH : LOW);  
+  
+  if (prevState != currentState) {
+      
+      Serial.println("Change Detected, fire all the stuff here, pausing for a while, not sure the amount of time yet");
+      WiFiConnect();
+      if (client.connect(host, 54322)) {
+
+      prevState = currentState;
+
+      Serial.println("sending request");
+      client.println(HTTP_METHOD + " " + PATH_NAME + " HTTP/1.1");
+      client.println("Host: " + String(host));
+      client.println("Connection: close");
+      client.println();  // end HTTP header
+
+      // send HTTP body
+      client.println("sensor_id=" + sensorid + 
+                     "&message=" + message + 
+                     "&token=" + token);
+
+      client.println("Content-Type: application/x-www-form-urlencoded");
+
+
+      while(client.connected()){
+        if(client.available()){
+          char c = client.read();
+          Serial.print(c);
+        }
+      }
+      Serial.println("request sent");
+      client.stop();
+      Serial.println("disconnected");
+      blinkTimes(5, 500);
+      delay(TIME_TO_WAIT_AFTER_TRIGGER); 
+    } else{
       Serial.println("Connection failed");
+      blinkTimes(10, 750);
       return;
     }
-    prevState = digitalRead(2);
-
-    String url = "/savelog";
-    Serial.println("sending request");
-    client.print(String("POST ") + url + " HTTP/1.1\r\n" + "Host: " + host + "\r\nsensor_id=" + sensorid + "&message=" + message + "&token=" + token + "\r\nUser-Agent: BuildFailureDetectorESP8266\r\n" + "Connection: close\r\n\r\n");
-    Serial.println("request sent");
-    delay(TIME_TO_WAIT_AFTER_TRIGGER); 
   }
 }
 
+void blinkTimes(int blinkCount, int timeDelay){
+  for(int i = 0; i < blinkCount; i++){
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(timeDelay);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(timeDelay);
+  }
+}
+
+void WiFiConnect(){
+  Serial.print("Wait for WiFi... ");
+  Serial.print("WiFi.status(): ");
+  Serial.print(WiFi.status());
+
+  while (WiFi.status() != WL_CONNECTED) {
+      WiFi.printDiag(Serial);
+      delay(3500);
+    }
+    blinkTimes(3, 250);
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+}
